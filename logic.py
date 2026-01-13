@@ -10,7 +10,8 @@ def zpracuj_pdf(cesta_k_pdf: str):
     vystup_slozka = pdf_path.parent  # temp/
 
     data = defaultdict(lambda: defaultdict(int))
-    vsechny_rozmery = set()
+
+    POVLECENI_ROZMERY = ["70/90", "140/200"]
 
     def sestav_radky(words, tolerance=3):
         radky = {}
@@ -76,12 +77,10 @@ def zpracuj_pdf(cesta_k_pdf: str):
                     rozpis = zpracuj_rozmery(r, mnozstvi)
                     for rozmer, ks in rozpis.items():
                         data[(typ, nazev, baleni_ks)][rozmer] += ks
-                        vsechny_rozmery.add(rozmer)
 
     # =====================
-    # DATAFRAME
+    # DATAFRAME – VŠE
     # =====================
-    sloupce = ["Typ produktu", "Název", "Balení (ks)"] + sorted(vsechny_rozmery)
     radky_out = []
 
     for (typ, nazev, baleni_ks), hodnoty in data.items():
@@ -90,30 +89,30 @@ def zpracuj_pdf(cesta_k_pdf: str):
             "Název": nazev,
             "Balení (ks)": baleni_ks
         }
-        for r in vsechny_rozmery:
-            row[r] = hodnoty.get(r, 0)
+        for r, v in hodnoty.items():
+            row[r] = v
         radky_out.append(row)
 
-    df = pd.DataFrame(radky_out, columns=sloupce)
+    df = pd.DataFrame(radky_out).fillna(0)
     df = df.sort_values(by=["Typ produktu", "Název"])
 
     # =====================
-    # ROZDĚLENÍ
+    # POVLEČENÍ – 6 SLOUPCŮ
     # =====================
     df_povleceni = df[df["Typ produktu"].str.contains("obliečky", case=False, na=False)]
-    df_ostatni = df[~df["Typ produktu"].str.contains("obliečky", case=False, na=False)]
 
-    # =====================
-    # SOUČTOVÝ ŘÁDEK – POVLEČENÍ
-    # =====================
     if not df_povleceni.empty:
-        soucty = df_povleceni.select_dtypes(include="number").sum()
+        df_povleceni = df_povleceni[["Typ produktu", "Název", "Balení (ks)"] + POVLECENI_ROZMERY]
+        df_povleceni["CELKEM"] = df_povleceni[POVLECENI_ROZMERY].sum(axis=1)
+
         souctovy_radek = {
             "Typ produktu": "CELKEM",
             "Název": "",
             "Balení (ks)": ""
         }
-        souctovy_radek.update(soucty)
+        for r in POVLECENI_ROZMERY:
+            souctovy_radek[r] = df_povleceni[r].sum()
+        souctovy_radek["CELKEM"] = df_povleceni["CELKEM"].sum()
 
         df_povleceni = pd.concat(
             [df_povleceni, pd.DataFrame([souctovy_radek])],
@@ -121,13 +120,16 @@ def zpracuj_pdf(cesta_k_pdf: str):
         )
 
     # =====================
+    # OSTATNÍ SORTIMENT – BEZE ZMĚN
+    # =====================
+    df_ostatni = df[~df["Typ produktu"].str.contains("obliečky", case=False, na=False)]
+
+    # =====================
     # ULOŽENÍ
     # =====================
-    soubor_vse = vystup_slozka / "soupis_skladovy.xlsx"
     soubor_povleceni = vystup_slozka / "soupis_povleceni.xlsx"
     soubor_ostatni = vystup_slozka / "soupis_ostatni_sortiment.xlsx"
 
-    df.to_excel(soubor_vse, index=False, engine="openpyxl")
     df_povleceni.to_excel(soubor_povleceni, index=False, engine="openpyxl")
     df_ostatni.to_excel(soubor_ostatni, index=False, engine="openpyxl")
 
@@ -135,3 +137,4 @@ def zpracuj_pdf(cesta_k_pdf: str):
         "povleceni": soubor_povleceni,
         "ostatni": soubor_ostatni
     }
+
