@@ -11,6 +11,7 @@ def zpracuj_pdf(cesta_k_pdf: str):
 
     data = defaultdict(lambda: defaultdict(int))
 
+    # POVINNÉ ROZMĚRY PRO POVLEČENÍ
     POVLECENI_ROZMERY = ["70/90", "140/200"]
 
     def sestav_radky(words, tolerance=3):
@@ -97,14 +98,23 @@ def zpracuj_pdf(cesta_k_pdf: str):
     df = df.sort_values(by=["Typ produktu", "Název"])
 
     # =====================
-    # POVLEČENÍ – 6 SLOUPCŮ
+    # POVLEČENÍ – PŘESNĚ 6 SLOUPCŮ
     # =====================
-    df_povleceni = df[df["Typ produktu"].str.contains("obliečky", case=False, na=False)]
+    df_povleceni = df[df["Typ produktu"].str.contains("obliečky", case=False, na=False)].copy()
 
     if not df_povleceni.empty:
-        df_povleceni = df_povleceni[["Typ produktu", "Název", "Balení (ks)"] + POVLECENI_ROZMERY]
+        # zajistí, že sloupce existují
+        for r in POVLECENI_ROZMERY:
+            if r not in df_povleceni.columns:
+                df_povleceni[r] = 0
+
         df_povleceni["CELKEM"] = df_povleceni[POVLECENI_ROZMERY].sum(axis=1)
 
+        df_povleceni = df_povleceni[
+            ["Typ produktu", "Název", "Balení (ks)"] + POVLECENI_ROZMERY + ["CELKEM"]
+        ]
+
+        # součtový řádek
         souctovy_radek = {
             "Typ produktu": "CELKEM",
             "Název": "",
@@ -137,4 +147,5 @@ def zpracuj_pdf(cesta_k_pdf: str):
         "povleceni": soubor_povleceni,
         "ostatni": soubor_ostatni
     }
+
 
