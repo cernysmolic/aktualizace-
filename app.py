@@ -10,6 +10,8 @@ app = FastAPI()
 TEMP = Path("temp")
 TEMP.mkdir(exist_ok=True)
 
+LAST_FILES = {}  # sem si uložíme poslední vygenerované soubory
+
 
 @app.get("/")
 def index():
@@ -29,7 +31,6 @@ body {
     background: #f4f6f8;
 }
 
-/* HLAVIČKA */
 .header {
     height: 70px;
     background: white;
@@ -44,13 +45,11 @@ body {
     font-size: 18px;
 }
 
-/* LAYOUT */
 .wrapper {
     display: flex;
     height: calc(100vh - 70px);
 }
 
-/* LEVÉ MENU */
 .sidebar {
     width: 220px;
     background: linear-gradient(#fff7cc, #ffe27a);
@@ -70,7 +69,6 @@ body {
     background: white;
 }
 
-/* HLAVNÍ OBSAH */
 .content {
     flex: 1;
     padding: 40px;
@@ -78,7 +76,7 @@ body {
 
 .card {
     background: white;
-    max-width: 420px;
+    max-width: 520px;
     padding: 30px;
     border-radius: 14px;
     box-shadow: 0 12px 30px rgba(0,0,0,0.12);
@@ -90,7 +88,7 @@ body {
 
 input[type=file] {
     width: 100%;
-    margin: 20px 0;
+    margin: 15px 0;
 }
 
 button {
@@ -127,21 +125,26 @@ button:hover {
     <div class="sidebar">
         <div class="menu-item">🏠 Přehled</div>
         <div class="menu-item">📄 PDF → Excel</div>
-        <div class="menu-item">📦 Sklad</div>
+        <div class="menu-item">📦 Odečet skladu</div>
         <div class="menu-item">⚙️ Nastavení</div>
     </div>
 
     <div class="content">
         <div class="card">
-            <h2>Nahrát PDF</h2>
+            <h2>Nahrát soubory</h2>
 
             <form action="/upload" method="post" enctype="multipart/form-data">
-                <input type="file" name="file" accept=".pdf" required>
-                <button type="submit">ZPRACOVAT PDF</button>
+                <label><b>1) PDF objednávek</b></label>
+                <input type="file" name="pdf_file" accept=".pdf" required>
+
+                <label><b>2) Excel stav skladu</b></label>
+                <input type="file" name="sklad_file" accept=".xlsx,.xls" required>
+
+                <button type="submit">ZPRACOVAT</button>
             </form>
 
             <div class="note">
-                Automatický převod objednávek na skladový přehled + odečet skladu
+                Vygeneruje soupis objednávek + odečte sklad automaticky
             </div>
         </div>
     </div>
@@ -154,13 +157,25 @@ button:hover {
 
 
 @app.post("/upload")
-async def upload(file: UploadFile = File(...)):
-    pdf_path = TEMP / file.filename
+async def upload(
+    pdf_file: UploadFile = File(...),
+    sklad_file: UploadFile = File(...)
+):
+    pdf_path = TEMP / pdf_file.filename
+    sklad_path = TEMP / sklad_file.filename
 
     with open(pdf_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        shutil.copyfileobj(pdf_file.file, f)
 
-    zpracuj_pdf(str(pdf_path))
+    with open(sklad_path, "wb") as f:
+        shutil.copyfileobj(sklad_file.file, f)
+
+    vysledky = zpracuj_pdf(str(pdf_path), str(sklad_path))
+
+    # uložíme poslední vygenerované soubory
+    LAST_FILES["povleceni"] = vysledky["povleceni"]
+    LAST_FILES["ostatni"] = vysledky["ostatni"]
+    LAST_FILES["sklad"] = vysledky["sklad"]
 
     return HTMLResponse("""
 <!DOCTYPE html>
@@ -200,7 +215,7 @@ a {
 
 .green { background: #16a34a; color: white; }
 .blue { background: #2563eb; color: white; }
-.orange { background: #f97316; color: white; }
+.orange { background: #f59e0b; color: white; }
 .gray { background: #e5e7eb; color: #111; }
 </style>
 </head>
@@ -209,9 +224,9 @@ a {
 <div class="box">
     <h2>✅ Hotovo</h2>
 
-    <a class="green" href="/download/povleceni">🛏️ Soupis povlečení</a>
-    <a class="blue" href="/download/ostatni">📦 Soupis ostatní sortiment</a>
-    <a class="orange" href="/download/sklad">📉 Stav skladu po odečtu</a>
+    <a class="green" href="/download/povleceni">🛏️ Stáhnout povlečení</a>
+    <a class="blue" href="/download/ostatni">📦 Stáhnout ostatní sortiment</a>
+    <a class="orange" href="/download/sklad">📦 Stav skladu po odečtu</a>
 
     <a class="gray" href="/">⬅️ Zpět</a>
 </div>
@@ -222,23 +237,17 @@ a {
 
 @app.get("/download/povleceni")
 def download_povleceni():
-    return FileResponse(
-        TEMP / "soupis_povleceni.xlsx",
-        filename="soupis_povleceni.xlsx"
-    )
+    cesta = LAST_FILES.get("povleceni", TEMP / "soupis_povleceni.xlsx")
+    return FileResponse(cesta, filename="soupis_povleceni.xlsx")
 
 
 @app.get("/download/ostatni")
 def download_ostatni():
-    return FileResponse(
-        TEMP / "soupis_ostatni_sortiment.xlsx",
-        filename="soupis_ostatni_sortiment.xlsx"
-    )
+    cesta = LAST_FILES.get("ostatni", TEMP / "soupis_ostatni_sortiment.xlsx")
+    return FileResponse(cesta, filename="soupis_ostatni_sortiment.xlsx")
 
 
 @app.get("/download/sklad")
 def download_sklad():
-    return FileResponse(
-        TEMP / "STAV_SKLADU_PO_ODECTU.xlsx",
-        filename="STAV_SKLADU_PO_ODECTU.xlsx"
-    )
+    cesta = LAST_FILES.get("sklad", TEMP / "stav_skladu_po_odectu.xlsx")
+    return FileResponse(cesta, filename="stav_skladu_po_odectu.xlsx")
