@@ -4,6 +4,17 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+# =====================
+# POVOLENÉ ROZMĚRY PRO POVLEČENÍ (6 SLOUPCŮ)
+# =====================
+POVLECENI_ROZMERY = [
+    "70/90",
+    "50/70",
+    "140/200",
+    "140/220",
+    "200/220"
+]
+
 
 def zpracuj_pdf(cesta_k_pdf: str):
     pdf_path = Path(cesta_k_pdf)
@@ -11,9 +22,9 @@ def zpracuj_pdf(cesta_k_pdf: str):
 
     data = defaultdict(lambda: defaultdict(int))
 
-    # POVINNÉ ROZMĚRY PRO POVLEČENÍ
-    POVLECENI_ROZMERY = ["70/90", "140/200"]
-
+    # =====================
+    # POMOCNÉ FUNKCE
+    # =====================
     def sestav_radky(words, tolerance=3):
         radky = {}
         for w in words:
@@ -30,12 +41,18 @@ def zpracuj_pdf(cesta_k_pdf: str):
 
     def zpracuj_rozmery(radek, mnozstvi):
         vysledek = defaultdict(int)
+
+        # např. 2x 70/90
         for p, r in re.findall(r"(\d+)x\s*(\d+/\d+)", radek):
             vysledek[r] += int(p)
+
         if vysledek:
             return vysledek
+
+        # běžný zápis
         for r in re.findall(r"(\d+/\d+)", radek):
             vysledek[r] += mnozstvi
+
         return vysledek
 
     # =====================
@@ -46,7 +63,7 @@ def zpracuj_pdf(cesta_k_pdf: str):
             radky = sestav_radky(page.extract_words() or [])
 
             typ = None
-            nazev = None
+            nazev = ""
             baleni_ks = 1
             mnozstvi = 1
 
@@ -98,39 +115,34 @@ def zpracuj_pdf(cesta_k_pdf: str):
     df = df.sort_values(by=["Typ produktu", "Název"])
 
     # =====================
-    # POVLEČENÍ – PŘESNĚ 6 SLOUPCŮ
+    # POVLEČENÍ – POUZE 6 SLOUPCŮ
     # =====================
-    df_povleceni = df[df["Typ produktu"].str.contains("obliečky", case=False, na=False)].copy()
+    df_povleceni = df[df["Typ produktu"].str.contains("obliečky", case=False, na=False)]
+
+    zaklad = ["Typ produktu", "Název", "Balení (ks)"]
+    rozmery_existujici = [r for r in POVLECENI_ROZMERY if r in df_povleceni.columns]
+
+    df_povleceni = df_povleceni[zaklad + rozmery_existujici]
 
     if not df_povleceni.empty:
-        # zajistí, že sloupce existují
-        for r in POVLECENI_ROZMERY:
-            if r not in df_povleceni.columns:
-                df_povleceni[r] = 0
+        df_povleceni["CELKEM"] = df_povleceni[rozmery_existujici].sum(axis=1)
 
-        df_povleceni["CELKEM"] = df_povleceni[POVLECENI_ROZMERY].sum(axis=1)
-
-        df_povleceni = df_povleceni[
-            ["Typ produktu", "Název", "Balení (ks)"] + POVLECENI_ROZMERY + ["CELKEM"]
-        ]
-
-        # součtový řádek
-        souctovy_radek = {
+        souctovy = {
             "Typ produktu": "CELKEM",
             "Název": "",
             "Balení (ks)": ""
         }
-        for r in POVLECENI_ROZMERY:
-            souctovy_radek[r] = df_povleceni[r].sum()
-        souctovy_radek["CELKEM"] = df_povleceni["CELKEM"].sum()
+        for r in rozmery_existujici:
+            souctovy[r] = df_povleceni[r].sum()
+        souctovy["CELKEM"] = df_povleceni["CELKEM"].sum()
 
         df_povleceni = pd.concat(
-            [df_povleceni, pd.DataFrame([souctovy_radek])],
+            [df_povleceni, pd.DataFrame([souctovy])],
             ignore_index=True
         )
 
     # =====================
-    # OSTATNÍ SORTIMENT – BEZE ZMĚN
+    # OSTATNÍ SORTIMENT
     # =====================
     df_ostatni = df[~df["Typ produktu"].str.contains("obliečky", case=False, na=False)]
 
@@ -147,5 +159,6 @@ def zpracuj_pdf(cesta_k_pdf: str):
         "povleceni": soubor_povleceni,
         "ostatni": soubor_ostatni
     }
+
 
 
