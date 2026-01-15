@@ -16,9 +16,9 @@ POVLECENI_ROZMERY = [
 ]
 
 
-def zpracuj_pdf(cesta_k_pdf: str):
+def zpracuj_pdf(cesta_k_pdf: str, cesta_ke_skladu: str | None = None):
     pdf_path = Path(cesta_k_pdf)
-    vystup_slozka = pdf_path.parent  # temp/
+    vystup_slozka = pdf_path.parent  # např. temp/
 
     data = defaultdict(lambda: defaultdict(int))
 
@@ -42,14 +42,14 @@ def zpracuj_pdf(cesta_k_pdf: str):
     def zpracuj_rozmery(radek, mnozstvi):
         vysledek = defaultdict(int)
 
-        # např. 2x 70/90
+        # např. 2x 70/90  → 2 kusy
         for p, r in re.findall(r"(\d+)x\s*(\d+/\d+)", radek):
-            vysledek[r] += int(p)
+            vysledek[r] += int(p) * mnozstvi
 
         if vysledek:
             return vysledek
 
-        # běžný zápis
+        # běžný zápis: 70/90 → tolik kusů, kolik je objednáno
         for r in re.findall(r"(\d+/\d+)", radek):
             vysledek[r] += mnozstvi
 
@@ -147,7 +147,7 @@ def zpracuj_pdf(cesta_k_pdf: str):
     df_ostatni = df[~df["Typ produktu"].str.contains("obliečky", case=False, na=False)]
 
     # =====================
-    # ULOŽENÍ
+    # ULOŽENÍ SOUPISŮ
     # =====================
     soubor_povleceni = vystup_slozka / "soupis_povleceni.xlsx"
     soubor_ostatni = vystup_slozka / "soupis_ostatni_sortiment.xlsx"
@@ -155,10 +155,50 @@ def zpracuj_pdf(cesta_k_pdf: str):
     df_povleceni.to_excel(soubor_povleceni, index=False, engine="openpyxl")
     df_ostatni.to_excel(soubor_ostatni, index=False, engine="openpyxl")
 
+    # =====================
+    # ODEČET SKLADU (AUTOMATICKY)
+    # =====================
+    if cesta_ke_skladu:
+        sklad_path = Path(cesta_ke_skladu)
+        if sklad_path.exists():
+            odecist_sklad(soubor_povleceni, sklad_path)
+
     return {
         "povleceni": soubor_povleceni,
         "ostatni": soubor_ostatni
     }
+
+
+# =====================
+# ODEČET SKLADU
+# =====================
+def odecist_sklad(soupis_povleceni: Path, sklad_path: Path):
+    df_soupis = pd.read_excel(soupis_povleceni)
+    df_sklad = pd.read_excel(sklad_path)
+
+    NAZEV = df_sklad.columns[1]     # sloupec B
+    STAV = df_sklad.columns[3]      # sloupec D
+    NOVY_STAV = df_sklad.columns[4] # sloupec E
+
+    df_sklad[NOVY_STAV] = df_sklad[STAV]
+
+    for _, row in df_soupis.iterrows():
+        nazev = row["Název"]
+        if pd.isna(nazev):
+            continue
+
+        for rozmer in POVLECENI_ROZMERY:
+            if rozmer not in row:
+                continue
+
+            ks = row.get(rozmer, 0)
+            if ks > 0:
+                maska = df_sklad[NAZEV] == nazev
+                df_sklad.loc[maska, NOVY_STAV] -= ks
+
+    vystup = sklad_path.parent / "STAV_SKLADU_PO_ODECTU.xlsx"
+    df_sklad.to_excel(vystup, index=False, engine="openpyxl")
+
 
 
 
