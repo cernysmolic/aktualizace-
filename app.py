@@ -10,7 +10,6 @@ app = FastAPI()
 TEMP = Path("temp")
 TEMP.mkdir(exist_ok=True)
 
-
 # =========================
 # HLAVNÍ STRÁNKA
 # =========================
@@ -87,13 +86,9 @@ body {
     box-shadow: 0 12px 30px rgba(0,0,0,0.12);
 }
 
-.card h2 {
-    margin-top: 0;
-}
-
 input[type=file] {
     width: 100%;
-    margin: 20px 0;
+    margin: 15px 0;
 }
 
 button {
@@ -128,23 +123,29 @@ button:hover {
 <div class="wrapper">
 
     <div class="sidebar">
-        <div class="menu-item">🏠 Přehled</div>
         <div class="menu-item">📄 PDF → Excel</div>
+        <div class="menu-item">📦 Stav skladu</div>
         <div class="menu-item">📊 Statistiky</div>
         <div class="menu-item">⚙️ Nastavení</div>
     </div>
 
     <div class="content">
         <div class="card">
-            <h2>Nahrát PDF</h2>
+            <h2>Nahrát soubory</h2>
 
             <form action="/upload" method="post" enctype="multipart/form-data">
-                <input type="file" name="file" accept=".pdf" required>
-                <button type="submit">ZPRACOVAT PDF</button>
+
+                <label><b>PDF objednávek</b></label>
+                <input type="file" name="pdf" accept=".pdf" required>
+
+                <label><b>Excel – stav skladu</b></label>
+                <input type="file" name="sklad" accept=".xlsx" required>
+
+                <button type="submit">ZPRACOVAT</button>
             </form>
 
             <div class="note">
-                Automatický převod objednávek na skladový přehled
+                PDF → soupis objednávek → automatický odečet skladu
             </div>
         </div>
     </div>
@@ -157,16 +158,26 @@ button:hover {
 
 
 # =========================
-# ZPRACOVÁNÍ PDF
+# ZPRACOVÁNÍ
 # =========================
 @app.post("/upload")
-async def upload(file: UploadFile = File(...)):
-    pdf_path = TEMP / file.filename
+async def upload(
+    pdf: UploadFile = File(...),
+    sklad: UploadFile = File(...)
+):
+    pdf_path = TEMP / pdf.filename
+    sklad_path = TEMP / sklad.filename
 
     with open(pdf_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        shutil.copyfileobj(pdf.file, f)
 
-    zpracuj_pdf(str(pdf_path))
+    with open(sklad_path, "wb") as f:
+        shutil.copyfileobj(sklad.file, f)
+
+    zpracuj_pdf(
+        cesta_k_pdf=str(pdf_path),
+        cesta_ke_skladu=str(sklad_path)
+    )
 
     return HTMLResponse("""
 <!DOCTYPE html>
@@ -177,7 +188,6 @@ async def upload(file: UploadFile = File(...)):
 
 <style>
 body {
-    margin: 0;
     font-family: Arial, sans-serif;
     background: #f4f6f8;
     display: flex;
@@ -214,8 +224,7 @@ a {
 <div class="box">
     <h2>✅ Hotovo</h2>
 
-    <a class="green" href="/download/povleceni">🛏️ Stáhnout povlečení</a>
-    <a class="blue" href="/download/ostatni">📦 Stáhnout ostatní sortiment</a>
+    <a class="green" href="/download/sklad">📦 Stav skladu po odečtu</a>
     <a class="gray" href="/">⬅️ Zpět</a>
 </div>
 </body>
@@ -224,19 +233,12 @@ a {
 
 
 # =========================
-# DOWNLOADY
+# DOWNLOAD
 # =========================
-@app.get("/download/povleceni")
-def download_povleceni():
+@app.get("/download/sklad")
+def download_sklad():
     return FileResponse(
-        TEMP / "soupis_povleceni.xlsx",
-        filename="soupis_povleceni.xlsx"
+        TEMP / "STAV_SKLADU_PO_ODECTU.xlsx",
+        filename="STAV_SKLADU_PO_ODECTU.xlsx"
     )
 
-
-@app.get("/download/ostatni")
-def download_ostatni():
-    return FileResponse(
-        TEMP / "soupis_ostatni_sortiment.xlsx",
-        filename="soupis_ostatni_sortiment.xlsx"
-    )
