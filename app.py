@@ -251,3 +251,5 @@ def download_ostatni():
 def download_sklad():
     cesta = LAST_FILES.get("sklad", TEMP / "stav_skladu_po_odectu.xlsx")
     return FileResponse(cesta, filename="stav_skladu_po_odectu.xlsx")
+
+
